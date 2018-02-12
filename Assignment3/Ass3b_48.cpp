@@ -1,32 +1,22 @@
-#include <iostream>
-#include <stdlib.h>
 #include <bits/stdc++.h>
-#include <time.h>
-#include <pthread.h>
 #include <unistd.h>
-
+#include <pthread.h>
+#include <signal.h>
 using namespace std;
-
-#define MAX_THREADS 1000
 
 #define READY 0
 #define RUNNING 1
-#define FINISHED 2
+#define TERMINATED 2
+#define MAX_THREADS 1000
 
-/* Status maintains the status of the threads.
- * 0: Blocked/Waiting
- * 1: Running
- * 2: Finished
-*/
-
-queue<int> queue_ready;
+queue<int> readyQ;
+map<pthread_t, int> mp;
+int num_threads;
 vector<int> status;
 vector<pthread_t> threads;
-int queue_len = 0;
-int num_threads;
 
 
-void signal_handler(int signum){
+void sig_handler(int signum){
   if (signum == SIGUSR2) {
     /* wake up */
   } else if (signum == SIGUSR1) {
@@ -36,131 +26,118 @@ void signal_handler(int signum){
   }
 }
 
-void* worker(void* arg){
+void* worker(void *arg){
   int arr[1000];
-  srand(*((int*)arg));
   for(int i=0;i<1000;i++)
     arr[i]=rand()%10000;
   sort(arr,arr+100);
-  sleep(rand()%10+1);
 
-  int callee = (int) pthread_self();
-  int pos = 0;
-  for(; pos<num_threads; pos++){
-    if(callee == threads[pos])
-      break;
-  }
-  status[pos] = FINISHED;
+  // Sleeping otherwise it gets terminated frequently
+  sleep(rand()%10+1);
+  status[mp[pthread_self()]] = TERMINATED;
   pthread_exit(0);
 }
 
-void* round_robin_scheduler(void *arg){
-  int quantum = 1;
-  int i=queue_ready.front();
-  queue_ready.pop();
-  status[i] = RUNNING;
-  pthread_kill(threads[i], SIGUSR2);
-  sleep(quantum);
 
-  while(true){
-    if(status[i] != FINISHED){
-      pthread_kill(threads[i%num_threads], SIGUSR1);
-      queue_ready.push(i);
-      status[i] = READY;
-    } else {
-      queue_len--;
+void* scheduler(void *arg){
+  int cur_id = -1;
+  int temp;
+  int quantum = 1;
+
+  while(true) {
+    if(readyQ.empty())
+      break;		
+    if (status[cur_id] != TERMINATED ) {
+      if(cur_id != -1){
+	readyQ.push(cur_id);
+	status[cur_id] = READY;
+	pthread_kill(threads[cur_id], SIGUSR1);
+      }
     }
-    if(!queue_ready.empty()){
-      i = queue_ready.front();
-      queue_ready.pop();
-      status[i] = RUNNING;
-      pthread_kill(threads[i], SIGUSR2);
-      sleep(quantum);
-    } else {
+    if (not readyQ.empty()) {
+    }
+    else
       break;
-    }
+    cur_id = readyQ.front();
+    readyQ.pop();
+
+    status[cur_id] = RUNNING;
+    pthread_kill(threads[cur_id], SIGUSR2);
+    sleep(quantum);
   }
   pthread_exit(0);
 }
 
 void* reporter(void *arg){
-  vector<int> ss(status), fin(num_threads, FINISHED);
-  while(ss != fin) {
+  vector<int> ss(status), fin(num_threads, TERMINATED);
+  while(ss != fin){
     if (ss == status) {
       /* if status if equal to the previous status do nothing*/
     }
     else{
-      /* if status is not equat to previous or it has been changed then 
-	 print the record*/
-      cout << "\n\ncurrent status of threads\n";
-      for (int i = 0; i < num_threads; i++){
+      cout << "\nCurrent status of threads\n"<< endl;
+      for (int i = 0; i < num_threads; i=i+1){
+	cout << threads[i] << " is ";
 	switch(status[i]){
-	case 0:
-	  cout << "READY";
+	case 0: cout << "READY";
 	  break;
-	case 1:
-	  cout << "RUNNING";
+	case 1: cout << "RUNNING";
 	  break;
-	case 2:
-	  cout << "FINISHED";
+	case 2: cout << "TERMINATED";
 	  break;
 	default:
 	  break;
 	}
-	cout << threads[i] << endl;
+	cout << endl;
       }
       ss = status;
     }
-    pthread_exit(0);
   }
+  pthread_exit(0);
 }
 
+int main(int argc, char const *argv[]){
+  int j;
+  pthread_t scheduler_tid, reporter_tid;
+  pthread_attr_t attr;
 
-int main(){
-  if (signal(SIGUSR2, signal_handler) == SIG_ERR)
+  // Install Signal Handler
+  if (signal(SIGUSR2, sig_handler) == SIG_ERR)
     cout << "\nCan't catch SIGUSR2\n";
-  if (signal(SIGUSR1, signal_handler) == SIG_ERR)
+  if (signal(SIGUSR1, sig_handler) == SIG_ERR)
     cout << "\nCan't catch SIGUSR1\n";
 
-  cout<<"Enter no. of threads"<<endl;
+  printf("Enter the number of workers : ");
   cin >> num_threads;
-
-  int seed_ar[num_threads];
-  int temp;
-  pthread_t scheduler_id, reporter_id;
-  pthread_attr_t attr;
-  srand(time(NULL));
-  pthread_attr_init(&attr);
 
   status.resize(num_threads);
   threads.resize(num_threads);
 
-  for(int i=0; i<num_threads; i++){
-    seed_ar[i]=rand()%10000;
-    temp = pthread_create(&threads[i], NULL, worker, (void*)&seed_ar[i]);
-    if(temp){
-      cout<<"thread cannot be created";
-      exit(EXIT_FAILURE);
-    }
-    //Initially stop the process
-    pthread_kill(threads[i], SIGUSR1);
-    queue_len++;
-    status[i] = READY;
-  }
+  // set default attrs.
+  pthread_attr_init(&attr);
 
-  if(pthread_create(&scheduler_id, NULL, round_robin_scheduler, NULL)){
-    cout << "Scheduler thread cannot be created"<<endl;
-    exit(EXIT_FAILURE);
+  // create num_threads workers
+  j=0;
+  while(j < num_threads){
+    pthread_create(&threads[j], &attr, worker, NULL);
+    mp[threads[j]] = j;
+    readyQ.push(j);
+    status[j] = READY;
+    
+    //Initially stop all threads
+    pthread_kill(threads[j], SIGUSR1);
+    j++;	
   }
+  pthread_create(&reporter_tid, &attr, reporter, NULL);
+  pthread_create(&scheduler_tid, &attr, scheduler, NULL);
 
-  if(pthread_create(&reporter_id, NULL, reporter, NULL)){
-    cout << "Scheduler thread cannot be created"<<endl;
-    exit(EXIT_FAILURE);
+  j=num_threads-1;
+  while(j >= 0){
+      pthread_join(threads[j], NULL);
+      j--;
   }
+  pthread_join(reporter_tid, NULL);	
+  pthread_join(scheduler_tid, NULL);
 
-  for(int i=0; i<num_threads; i++)    
-    pthread_join(threads[i],NULL);
-  pthread_join(scheduler_id, NULL);
-  pthread_join(reporter_id, NULL);
   return 0;
 }
