@@ -27,8 +27,8 @@ void sig_handler(int signum){
 }
 
 void* worker(void *arg){
-  int arr[1000];
-  for(int i=0;i<1000;i++)
+  int arr[10000];
+  for(int i=0;i<10000;i++)
     arr[i]=rand()%10000;
   sort(arr,arr+100);
 
