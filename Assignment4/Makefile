@@ -1,5 +1,5 @@
 current_dir = $(shell pwd)
-CFLAGS = -I/$(current_dir)
+CFLAGS = -I$(current_dir)
 
 CC = g++
 
