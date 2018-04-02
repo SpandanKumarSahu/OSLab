@@ -1,10 +1,14 @@
 #include <bits/stdc++.h>
 #include <fstream>
+#include <stdlib.h>
+#include <time.h>
+
 #define MAX_TABLE_SIZE 64
 #define MEM_CPU_TIME 1
 #define SWAPDEV_CPU_TIME 3000
 #define MAP_CPU_TIME 250
 #define n 64
+#define num_algos 3
 
 using namespace std;
 
@@ -15,9 +19,10 @@ bool trace;
 int page_operation;
 int page_faults;
 int CPU_time;
-
+int count_algos;
 
 queue<int> FIFO;
+int timestamps[MAX_TABLE_SIZE];
 
 /* TABLE DESIGN
   MSB                                                                                           LSB
@@ -55,12 +60,24 @@ int get_replacement_index(){
     if(isValid == false)
       return i;
   }
-  if(FIFO.empty()){
-    cout << "Grave error!" << endl;
-    exit(0);
-  } else{
-    index_num = FIFO.front();
-    FIFO.pop();
+  if(count_algos == 0){
+    if(FIFO.empty()){
+      cout << "Grave error!" << endl;
+      exit(0);
+    } else{
+      index_num = FIFO.front();
+      FIFO.pop();
+      return index_num;
+    }
+  } else if(count_algos == 1){
+    index_num = rand()%TABLE_SIZE;
+    return index_num;
+  } else if(count_algos == 2){
+    index_num = 0;
+    for(int i=0; i<TABLE_SIZE; i++){
+      if(timestamps[i] < timestamps[index_num])
+        index_num = i;
+    }
     return index_num;
   }
 }
@@ -140,44 +157,55 @@ int main(){
   std::vector<bool> type;
   std::vector<int> lines;
   get_file_contents(type, pagenum, lines, "input.txt");
+  count_algos = 0;
+  srand(time(NULL));
+  int timer;
 
   // Initialise the memory mapping
-  memset(memory_map, 0, TABLE_SIZE * sizeof(int));
-  CPU_time = 0;
-  page_operation = 0;
-  page_faults = 0;
+  while(count_algos < num_algos){
+    memset(memory_map, 0, TABLE_SIZE * sizeof(int));
+    memset(timestamps, 0, TABLE_SIZE * sizeof(int));
+    CPU_time = 0;
+    page_operation = 0;
+    page_faults = 0;
+    timer = 0;
 
-  for(int i=0; i<pagenum.size(); i++){
-    // Get index number
-    int index_num = -1;
-    bool isValid, isDirty, isReferenced;
-    if(trace)
-      cout << "\n" << lines[i] << endl;
-    if(pagenum[i] > n){
-      cout << "Page Fault Exception" << endl;
-      page_faults += 1;
-      continue;
-    }
-    get_mapping(pagenum[i], index_num, isValid, isDirty, isReferenced);
+    for(int i=0; i<pagenum.size(); i++){
+      // Get index number
+      int index_num = -1;
+      bool isValid, isDirty, isReferenced;
+      if(trace)
+        cout << "\n" << lines[i] << endl;
+      if(pagenum[i] > n){
+        cout << "Page Fault Exception" << endl;
+        page_faults += 1;
+        continue;
+      }
+      get_mapping(pagenum[i], index_num, isValid, isDirty, isReferenced);
 
-    if(index_num < 0){
-      index_num = get_new_address(pagenum[i]);
-    }
+      if(index_num < 0){
+        index_num = get_new_address(pagenum[i]);
+      }
 
-    if(type[i] == 0){
-      /* Read type */
-      memory_map[index_num] = pagenum[i] << 3 | (1 << 2) | (isDirty << 1) | (1<<0);
-      CPU_time += MEM_CPU_TIME;
-    } else {
-      /* Write type */
-      memory_map[index_num] = pagenum[i] << 3 | (1 << 2) | (1<<1) | (1<<0);
-      CPU_time += MEM_CPU_TIME;
+      if(type[i] == 0){
+        /* Read type */
+        memory_map[index_num] = pagenum[i] << 3 | (1 << 2) | (isDirty << 1) | (1<<0);
+        CPU_time += MEM_CPU_TIME;
+        timestamps[index_num] = ++timer;
+      } else {
+        /* Write type */
+        memory_map[index_num] = pagenum[i] << 3 | (1 << 2) | (1<<1) | (1<<0);
+        CPU_time += MEM_CPU_TIME;
+        timestamps[index_num] = ++timer;
+      }
+      if(trace)
+        cout << "\n";
     }
-    if(trace)
-      cout << "\n";
+    cout << "Total out-of-bound pages: " << page_faults << endl;
+    cout << "Total page faults: " << page_operation << endl;
+    cout << "Total time taken: " << CPU_time << endl;
+    count_algos++;
   }
-  cout << "Total out-of-bound pages: " << page_faults << endl;
-  cout << "Total page faults: " << page_operation << endl;
-  cout << "Total time taken: " << CPU_time << endl;
+
   return 0;
 }
