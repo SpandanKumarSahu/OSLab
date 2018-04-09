@@ -250,9 +250,12 @@ int main(){
     timer = 0;
 
     for(int i=0; i<pagenum.size(); i++){
+
+
       // Get index number
       int index_num = -1;
       bool isValid, isDirty, isReferenced;
+      int pagenum_c;
       if(trace)
         cout << "\n" << lines[i] << endl;
       if(pagenum[i] > n){
@@ -260,8 +263,17 @@ int main(){
         page_faults += 1;
         continue;
       }
-      get_mapping(pagenum[i], index_num, isValid, isDirty, isReferenced);
 
+      // If the algo is NRU and after 1000 memory access
+      if(count_algos == 3 && i%1000 == 0){
+        for(int j=0; j<TABLE_SIZE; j++){
+          parse_index_entry(memory_map[j], pagenum_c, isValid, isDirty, isReferenced);
+          isReferenced = 0;
+          memory_map[j] = pagenum_c << 3 | (isValid << 2) | (isDirty << 1) | (isReferenced<<0);
+        }
+      }
+
+      get_mapping(pagenum[i], index_num, isValid, isDirty, isReferenced);
       if(index_num < 0){
         index_num = get_new_address(pagenum[i]);
       }
