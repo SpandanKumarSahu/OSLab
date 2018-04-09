@@ -8,7 +8,7 @@
 #define SWAPDEV_CPU_TIME 3000
 #define MAP_CPU_TIME 250
 #define n 64
-#define num_algos 3
+#define num_algos 5
 
 using namespace std;
 
@@ -19,10 +19,38 @@ bool trace;
 int page_operation;
 int page_faults;
 int CPU_time;
+
 int count_algos;
+string algo_name(){
+  switch(count_algos){
+    case 0:
+    return "FIFO";
+    break;
+    case 1:
+    return "RANDOM";
+    break;
+    case 2:
+    return "LRU";
+    break;
+    case 3:
+    return "NRU";
+    break;
+    case 4:
+    return "SECOND CHANCE";
+    break;
+    default:
+    return "WHAT?";
+  }
+}
+
 
 queue<int> FIFO;
 int timestamps[MAX_TABLE_SIZE];
+
+/*
+  Assumptions:
+  1. Page numbers can be from 0 to 63.
+*/
 
 /* TABLE DESIGN
   MSB                                                                                           LSB
@@ -32,9 +60,9 @@ int timestamps[MAX_TABLE_SIZE];
 */
 
 void parse_index_entry(int entry, int &pagenum, bool &isValid, bool &isDirty, bool &isReferenced){
-  isValid = entry & 1<<0;
+  isValid = entry & 1<<2;
   isDirty = entry & 1<<1;
-  isReferenced = entry & 1<<2;
+  isReferenced = entry & 1<<0;
   pagenum = (entry >> 3);
 }
 
@@ -61,6 +89,7 @@ int get_replacement_index(){
       return i;
   }
   if(count_algos == 0){
+    /* FIFO */
     if(FIFO.empty()){
       cout << "Grave error!" << endl;
       exit(0);
@@ -70,15 +99,65 @@ int get_replacement_index(){
       return index_num;
     }
   } else if(count_algos == 1){
+    /* Random */
     index_num = rand()%TABLE_SIZE;
     return index_num;
   } else if(count_algos == 2){
+    /* LRU */
     index_num = 0;
     for(int i=0; i<TABLE_SIZE; i++){
       if(timestamps[i] < timestamps[index_num])
         index_num = i;
     }
     return index_num;
+  } else if(count_algos == 3){
+    /* NRU
+      For detailed algorithm description, visit:
+      https://en.wikipedia.org/wiki/Page_replacement_algorithm#Variants_on_LRU
+    */
+    std::vector<int> class_one, class_two, class_three, class_zero;
+    for(int i=0; i<TABLE_SIZE; i++){
+      parse_index_entry(memory_map[i], pagenum, isValid, isDirty, isReferenced);
+      if(isReferenced && isDirty)
+        class_three.push_back(i);
+      else if(isReferenced && !isDirty)
+        class_two.push_back(i);
+      else if(!isReferenced && isDirty)
+        class_one.push_back(i);
+      else{
+        class_zero.push_back(i);
+        break;
+      }
+    }
+    if(class_zero.size() > 0)
+      return class_zero[0];
+    else if(class_one.size() > 0)
+      return class_one[0];
+    else if(class_two.size() > 0)
+      return class_two[0];
+    else if(class_three.size() > 0)
+      return class_three[0];
+    else
+      return 0;
+  } else if(count_algos == 4){
+    /* Second chance */
+    if(FIFO.empty()){
+      cout << "Grave error!" << endl;
+      exit(0);
+    } else{
+      isReferenced = true;
+      while(isReferenced == true){
+        index_num = FIFO.front();
+        parse_index_entry(memory_map[index_num], pagenum, isValid, isDirty, isReferenced);
+        if(isReferenced == false)
+          return index_num;
+        else{
+          memory_map[index_num] = pagenum << 3 | (1 << 2) | (isDirty << 1);
+          FIFO.pop();
+          FIFO.push(index_num);
+        }
+      }
+    }
   }
 }
 
@@ -156,7 +235,7 @@ int main(){
   vector<int> pagenum;
   std::vector<bool> type;
   std::vector<int> lines;
-  get_file_contents(type, pagenum, lines, "input.txt");
+  get_file_contents(type, pagenum, lines, "trace.txt");
   count_algos = 0;
   srand(time(NULL));
   int timer;
@@ -176,7 +255,7 @@ int main(){
       bool isValid, isDirty, isReferenced;
       if(trace)
         cout << "\n" << lines[i] << endl;
-      if(pagenum[i] > n){
+      if(pagenum[i] >= n){
         cout << "Page Fault Exception" << endl;
         page_faults += 1;
         continue;
@@ -201,9 +280,11 @@ int main(){
       if(trace)
         cout << "\n";
     }
+    cout << algo_name() << endl;
     cout << "Total out-of-bound pages: " << page_faults << endl;
     cout << "Total page faults: " << page_operation << endl;
     cout << "Total time taken: " << CPU_time << endl;
+    cout << endl;
     count_algos++;
   }
 
