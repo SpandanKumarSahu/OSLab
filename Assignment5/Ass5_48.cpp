@@ -18,7 +18,7 @@ bool trace;
 
 int page_operation;
 int page_faults;
-int CPU_time;
+long long int CPU_time;
 
 int count_algos;
 string algo_name(){
@@ -255,7 +255,7 @@ int main(){
       bool isValid, isDirty, isReferenced;
       if(trace)
         cout << "\n" << lines[i] << endl;
-      if(pagenum[i] >= n){
+      if(pagenum[i] > n){
         cout << "Page Fault Exception" << endl;
         page_faults += 1;
         continue;
